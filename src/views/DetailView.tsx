@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowLeft,
+  Bot,
   Copy,
   Download,
   Edit3,
   ExternalLink,
   Plus,
+  RefreshCw,
   Trash2,
 } from 'lucide-react';
 import { AsyncCombobox, type ComboboxOption } from '../components/AsyncCombobox';
@@ -22,6 +25,7 @@ interface DetailViewProps {
   onNavigate: (target: RouteTarget) => void;
   onEdit: (record: any) => void;
   onDeleted: (entity: EntityType) => void;
+  onAskAgent?: (scope: { entity: EntityType; id: number; name: string }) => void;
 }
 
 const TABS_BY_ENTITY: Record<EntityType, TabDefinition[]> = {
@@ -58,10 +62,12 @@ const TABS_BY_ENTITY: Record<EntityType, TabDefinition[]> = {
   units: [{ key: 'ingredients', label: 'Ingredients', targetEntity: 'ingredients' }],
   ingredients: [
     { key: 'formulas', label: 'Formulas Using This', targetEntity: 'formulas' },
+    { key: 'cost_history', label: 'Cost History', targetEntity: 'cost_history' },
     { key: 'uploads', label: 'Uploads', targetEntity: 'uploads' },
     { key: 'tags', label: 'Tags', targetEntity: 'tags' },
   ],
   formulas: [
+    { key: 'cost_history', label: 'Cost History', targetEntity: 'cost_history' },
     { key: 'uploads', label: 'Uploads', targetEntity: 'uploads' },
     { key: 'tags', label: 'Tags', targetEntity: 'tags' },
   ],
@@ -74,6 +80,7 @@ export function DetailView({
   onNavigate,
   onEdit,
   onDeleted,
+  onAskAgent,
 }: DetailViewProps) {
   const [record, setRecord] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -88,6 +95,9 @@ export function DetailView({
   const [newQuantity, setNewQuantity] = useState<string>('1');
   const [editingQty, setEditingQty] = useState<Record<number, string>>({});
   const [savingLine, setSavingLine] = useState(false);
+  const [ingestingUpload, setIngestingUpload] = useState(false);
+  const [ingestMessage, setIngestMessage] = useState<string | null>(null);
+  const [localRefresh, setLocalRefresh] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -95,6 +105,7 @@ export function DetailView({
     setError(null);
     setConfirmDelete(false);
     setActionError(null);
+    setIngestMessage(null);
 
     apiFetch<any>(`/api/${entity}/${id}`)
       .then((res) => {
@@ -115,7 +126,24 @@ export function DetailView({
     return () => {
       active = false;
     };
-  }, [entity, id, refreshKey]);
+  }, [entity, id, refreshKey, localRefresh]);
+
+  const handleIngestSingle = async () => {
+    setIngestingUpload(true);
+    setActionError(null);
+    setIngestMessage(null);
+    try {
+      const res = await apiFetch<{ chunks: number; embedded: number }>(`/api/rag/ingest/${id}`, {
+        method: 'POST',
+      });
+      setIngestMessage(`Indexed ${res.chunks} chunk(s), ${res.embedded} vector embedding(s).`);
+      setLocalRefresh((k) => k + 1);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Ingestion failed');
+    } finally {
+      setIngestingUpload(false);
+    }
+  };
 
   const handleDelete = async () => {
     setActionError(null);
@@ -259,8 +287,29 @@ export function DetailView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {onAskAgent &&
+            ['formulas', 'ingredients', 'materials', 'suppliers', 'uploads'].includes(entity) && (
+              <button
+                type="button"
+                onClick={() => onAskAgent({ entity, id, name: displayName })}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-teal-200 dark:border-teal-800 bg-teal-50/70 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/50 whitespace-nowrap shrink-0"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span>Ask Agent</span>
+              </button>
+            )}
+
           {entity === 'uploads' && (
             <>
+              <button
+                type="button"
+                disabled={ingestingUpload}
+                onClick={handleIngestSingle}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${ingestingUpload ? 'animate-spin' : ''}`} />
+                <span>{ingestingUpload ? 'Ingesting...' : record.ingested ? 'Re-ingest' : 'Ingest for RAG'}</span>
+              </button>
               <a
                 href={`/api/uploads/${record.id}/file`}
                 target="_blank"
@@ -352,6 +401,12 @@ export function DetailView({
         </div>
       )}
 
+      {ingestMessage && (
+        <div className="p-3 rounded-md border border-teal-300 dark:border-teal-800 bg-teal-50/70 dark:bg-teal-950/40 text-xs text-teal-800 dark:text-teal-300">
+          {ingestMessage}
+        </div>
+      )}
+
       {/* Record Fields Panel */}
       <div className="border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 p-5">
         <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm">
@@ -395,6 +450,14 @@ export function DetailView({
                 <dt className="text-xs text-slate-500 dark:text-slate-400 mb-1">FEMA</dt>
                 <dd className="font-mono text-slate-900 dark:text-slate-100">
                   {record.FEMA || '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500 dark:text-slate-400 mb-1">Max Usage %</dt>
+                <dd className="font-mono tabular-nums text-slate-900 dark:text-slate-100">
+                  {record.max_percent !== null && record.max_percent !== undefined
+                    ? `${record.max_percent}%`
+                    : '—'}
                 </dd>
               </div>
             </>
@@ -441,6 +504,14 @@ export function DetailView({
                     name={record.unit_name}
                     onNavigate={onNavigate}
                   />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500 dark:text-slate-400 mb-1">Max Usage %</dt>
+                <dd className="font-mono tabular-nums text-slate-900 dark:text-slate-100">
+                  {record.max_percent !== null && record.max_percent !== undefined
+                    ? `${record.max_percent}%`
+                    : '—'}
                 </dd>
               </div>
             </>
@@ -517,9 +588,10 @@ export function DetailView({
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-slate-500 dark:text-slate-400 mb-1">Ingested (RAG)</dt>
+                <dt className="text-xs text-slate-500 dark:text-slate-400 mb-1">RAG Index Status</dt>
                 <dd className="text-xs text-slate-900 dark:text-slate-100">
-                  {record.ingested ? 'Yes' : 'No'}
+                  {record.ingestion_status || (record.ingested ? 'indexed' : 'pending')}
+                  {record.ingestion_error ? ` — ${record.ingestion_error}` : ''}
                 </dd>
               </div>
               <div className="sm:col-span-2 lg:col-span-3">
@@ -657,7 +729,11 @@ export function DetailView({
                     return (
                       <tr
                         key={row.ingredient}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                        className={
+                          row.exceeds_limit
+                            ? 'bg-rose-50/60 dark:bg-rose-950/20 hover:bg-rose-50 dark:hover:bg-rose-950/30'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                        }
                       >
                         <td className="py-2.5 pr-3">
                           <EntityLink
@@ -666,6 +742,12 @@ export function DetailView({
                             name={row.ingredient_name}
                             onNavigate={onNavigate}
                           />
+                          {row.exceeds_limit && (
+                            <div className="inline-flex items-center gap-1 mt-0.5 text-[11px] font-medium text-rose-700 dark:text-rose-400">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>Exceeds max {row.effective_max_percent}%</span>
+                            </div>
+                          )}
                         </td>
                         <td className="py-2.5 pr-3 text-xs">
                           <EntityLink
@@ -701,8 +783,20 @@ export function DetailView({
                         <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-xs text-slate-700 dark:text-slate-300">
                           {row.weight_kg}
                         </td>
-                        <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-xs text-slate-700 dark:text-slate-300">
-                          {row.weight_percent}%
+                        <td
+                          className={`py-2.5 pr-3 text-right font-mono tabular-nums text-xs ${
+                            row.exceeds_limit
+                              ? 'font-semibold text-rose-700 dark:text-rose-400'
+                              : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <div>{row.weight_percent}%</div>
+                          {row.effective_max_percent !== null &&
+                            row.effective_max_percent !== undefined && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                max {row.effective_max_percent}%
+                              </div>
+                            )}
                         </td>
                         <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-xs font-medium text-slate-900 dark:text-slate-100">
                           ${formatMoney(row.line_usd_cost)}

@@ -507,7 +507,16 @@ uploadsRouter.delete('/:id', async (req, res) => {
       return;
     }
 
-    await db('uploads').where('id', id).del();
+    await db.transaction(async (trx) => {
+      const chunkIds = await trx('rag_chunks')
+        .where({ source_type: 'upload', source_id: id })
+        .pluck('id');
+      if (chunkIds.length > 0) {
+        await trx('rag_fts').whereIn('chunk_id', chunkIds).del();
+        await trx('rag_chunks').whereIn('id', chunkIds).del();
+      }
+      await trx('uploads').where('id', id).del();
+    });
 
     safeUnlink(resolveConfinedPath(UPLOADS_DIR, item.stored_path));
     if (item.thumbnail_path) {

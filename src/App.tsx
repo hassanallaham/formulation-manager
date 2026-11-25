@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import {
   Atom,
   Beaker,
+  Bot,
   Coins,
+  Cpu,
   DatabaseBackup,
   FlaskConical,
   FolderTree,
@@ -13,17 +15,21 @@ import {
   Moon,
   Package,
   Scale,
+  Search,
   Sun,
   Tag as TagIcon,
   Truck,
   X,
 } from 'lucide-react';
 import { AuthGate, ChangePasswordModal } from './components/AuthGate';
+import { CommandPalette } from './components/CommandPalette';
 import { EntityModal } from './components/EntityModal';
 import { apiFetch, setAuthToken } from './lib/api';
-import type { Category, EntityType, RouteTarget } from './types';
+import type { AppView, Category, EntityType, RouteTarget } from './types';
+import { AgentChatView } from './views/AgentChatView';
 import { DetailView } from './views/DetailView';
 import { ListView } from './views/ListView';
+import { LlmSettingsView } from './views/LlmSettingsView';
 
 const NAV_ITEMS: { entity: EntityType; label: string; icon: typeof FlaskConical }[] = [
   { entity: 'formulas', label: 'Formulas', icon: FlaskConical },
@@ -35,6 +41,11 @@ const NAV_ITEMS: { entity: EntityType; label: string; icon: typeof FlaskConical 
   { entity: 'uploads', label: 'Uploads', icon: HardDriveUpload },
   { entity: 'units', label: 'Units', icon: Scale },
   { entity: 'currencies', label: 'Currencies', icon: Coins },
+];
+
+const AI_NAV_ITEMS: { entity: AppView; label: string; icon: typeof Bot }[] = [
+  { entity: 'ai-chat', label: 'AI Assistant', icon: Bot },
+  { entity: 'llm-settings', label: 'LLM & RAG Settings', icon: Cpu },
 ];
 
 export default function App() {
@@ -67,6 +78,23 @@ export default function App() {
   } | null>(null);
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [scopedChat, setScopedChat] = useState<{
+    entity: EntityType;
+    id: number;
+    name: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -145,7 +173,9 @@ export default function App() {
     );
   }
 
-  const currentNav = NAV_ITEMS.find((n) => n.entity === route.entity);
+  const currentNav =
+    NAV_ITEMS.find((n) => n.entity === route.entity) ||
+    AI_NAV_ITEMS.find((n) => n.entity === route.entity);
 
   return (
     <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
@@ -203,6 +233,31 @@ export default function App() {
               </button>
             );
           })}
+
+          <div className="pt-3 mt-3 border-t border-slate-200 dark:border-slate-800 space-y-0.5">
+            <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Intelligence
+            </div>
+            {AI_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const active = route.entity === item.entity;
+              return (
+                <button
+                  key={item.entity}
+                  type="button"
+                  onClick={() => navigate({ entity: item.entity })}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors whitespace-nowrap ${
+                    active
+                      ? 'bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 font-medium'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
         <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-1 text-xs">
@@ -264,22 +319,42 @@ export default function App() {
             </nav>
           </div>
 
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-3.5 h-3.5" />
-            ) : (
-              <Moon className="w-3.5 h-3.5" />
-            )}
-            <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCommandOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Search</span>
+              <kbd className="font-mono text-[10px] text-slate-400 dark:text-slate-500">Ctrl+K</kbd>
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-3.5 h-3.5" />
+              ) : (
+                <Moon className="w-3.5 h-3.5" />
+              )}
+              <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 p-5 sm:p-6 max-w-7xl w-full mx-auto">
-          {route.id ? (
+          {route.entity === 'ai-chat' ? (
+            <AgentChatView
+              initialScope={scopedChat}
+              onClearInitialScope={() => setScopedChat(null)}
+              onNavigate={navigate}
+            />
+          ) : route.entity === 'llm-settings' ? (
+            <LlmSettingsView />
+          ) : route.id ? (
             <DetailView
               entity={route.entity}
               id={route.id}
@@ -288,13 +363,17 @@ export default function App() {
               onEdit={(record) =>
                 setModalState({
                   open: true,
-                  entity: route.entity,
+                  entity: route.entity as EntityType,
                   initialRecord: record,
                 })
               }
               onDeleted={(entity) => {
                 setRefreshKey((k) => k + 1);
                 navigate({ entity });
+              }}
+              onAskAgent={(scope) => {
+                setScopedChat(scope);
+                navigate({ entity: 'ai-chat' });
               }}
             />
           ) : (
@@ -305,7 +384,7 @@ export default function App() {
               onCreate={(defaultParentCategory?: Category) =>
                 setModalState({
                   open: true,
-                  entity: route.entity,
+                  entity: route.entity as EntityType,
                   defaultParentCategory: defaultParentCategory
                     ? { id: defaultParentCategory.id, name: defaultParentCategory.name }
                     : null,
@@ -338,6 +417,12 @@ export default function App() {
       {passwordModalOpen && (
         <ChangePasswordModal onClose={() => setPasswordModalOpen(false)} />
       )}
+
+      <CommandPalette
+        open={commandOpen}
+        onClose={() => setCommandOpen(false)}
+        onNavigate={navigate}
+      />
     </div>
   );
 }

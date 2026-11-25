@@ -194,6 +194,10 @@ materialsRouter.post('/', async (req, res) => {
         info: req.body?.info ? String(req.body.info) : null,
         category: req.body?.category ? Number(req.body.category) : 1,
         photo: req.body?.photo ? Number(req.body.photo) : null,
+        max_percent:
+          req.body?.max_percent !== undefined && req.body?.max_percent !== null && req.body?.max_percent !== ''
+            ? Number(req.body.max_percent)
+            : null,
       });
 
       if (tagIds.length > 0) {
@@ -228,6 +232,12 @@ materialsRouter.put('/:id', async (req, res) => {
       if (req.body?.info !== undefined) updates.info = req.body.info ? String(req.body.info) : null;
       if (req.body?.category !== undefined) updates.category = Number(req.body.category) || 1;
       if (req.body?.photo !== undefined) updates.photo = req.body.photo ? Number(req.body.photo) : null;
+      if (req.body?.max_percent !== undefined) {
+        updates.max_percent =
+          req.body.max_percent !== null && req.body.max_percent !== ''
+            ? Number(req.body.max_percent)
+            : null;
+      }
 
       await trx('materials').where('id', id).update(updates);
 

@@ -45,11 +45,18 @@ export function EntityModal({
   const [cost, setCost] = useState<string>(
     initialRecord?.cost !== undefined ? String(initialRecord.cost) : '0'
   );
+  const [maxPercent, setMaxPercent] = useState<string>(
+    initialRecord?.max_percent !== null && initialRecord?.max_percent !== undefined
+      ? String(initialRecord.max_percent)
+      : ''
+  );
 
   // Upload specific
   const [file, setFile] = useState<File | null>(null);
   const [ingested, setIngested] = useState<boolean>(Boolean(initialRecord?.ingested));
   const [duplicateUpload, setDuplicateUpload] = useState<UploadRecord | null>(null);
+  const [quickUploading, setQuickUploading] = useState(false);
+  const [quickUploadNotice, setQuickUploadNotice] = useState<string | null>(null);
 
   // Relations via ComboboxOption
   const [category, setCategory] = useState<ComboboxOption | null>(
@@ -110,6 +117,49 @@ export function EntityModal({
     currencies: 'Currency',
   };
 
+  const handleQuickUpload = async (selectedFile: File | null) => {
+    if (!selectedFile) return;
+    setQuickUploading(true);
+    setQuickUploadNotice(null);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('category', String(category?.id || 1));
+      formData.append('notes', '');
+      formData.append('ingested', 'false');
+      formData.append('tags', '[]');
+
+      const created = await apiFetch<UploadRecord>('/api/uploads', {
+        method: 'POST',
+        body: formData,
+      });
+
+      setUploads((prev) =>
+        prev.some((u) => u.id === created.id)
+          ? prev
+          : [...prev, { id: created.id, name: created.original_name }]
+      );
+      setQuickUploadNotice(`Uploaded & attached "${created.original_name}".`);
+    } catch (err) {
+      if (err instanceof ApiError && err.duplicate && err.existingUpload) {
+        const existing = err.existingUpload;
+        setUploads((prev) =>
+          prev.some((u) => u.id === existing.id)
+            ? prev
+            : [...prev, { id: existing.id, name: existing.original_name }]
+        );
+        setQuickUploadNotice(
+          `Matched existing file "${existing.original_name}" (SHA-256 deduplicated) and attached it.`
+        );
+      } else {
+        setError(err instanceof Error ? err.message : 'Quick upload failed');
+      }
+    } finally {
+      setQuickUploading(false);
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -156,6 +206,7 @@ export function EntityModal({
           name,
           CAS: cas || null,
           FEMA: fema || null,
+          max_percent: maxPercent.trim() !== '' ? Number(maxPercent) : null,
           info: info || null,
           category: category?.id || 1,
           photo: photo?.id || null,
@@ -181,6 +232,7 @@ export function EntityModal({
           photo: photo?.id || null,
           info: info || null,
           cost: Number(cost),
+          max_percent: maxPercent.trim() !== '' ? Number(maxPercent) : null,
           unit: unit?.id || 1,
           currency: currency?.id || 1,
           tags: tags.map((t) => t.id),
@@ -323,8 +375,8 @@ export function EntityModal({
                 </div>
               </div>
 
-              {/* Row 3: Cost + Unit + Currency + Photo */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Row 3: Cost + Unit + Currency + Max % + Photo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Cost (per Unit)
@@ -363,6 +415,21 @@ export function EntityModal({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Max Usage %
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="Optional"
+                    value={maxPercent}
+                    onChange={(e) => setMaxPercent(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono tabular-nums rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Photo
                   </label>
                   <AsyncCombobox
@@ -391,9 +458,26 @@ export function EntityModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Attached Uploads
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Attached Uploads
+                    </label>
+                    <label className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-600 dark:text-teal-400 hover:underline cursor-pointer">
+                      <UploadCloud className="w-3 h-3" />
+                      <span>{quickUploading ? 'Uploading...' : 'Quick Upload'}</span>
+                      <input
+                        type="file"
+                        accept="image/*,.pdf,.md,.markdown,.txt"
+                        disabled={quickUploading}
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          e.target.value = '';
+                          handleQuickUpload(f);
+                        }}
+                      />
+                    </label>
+                  </div>
                   <AsyncCombobox
                     endpoint="/api/uploads/lookup"
                     placeholder="Search & attach uploads..."
@@ -401,6 +485,11 @@ export function EntityModal({
                     values={uploads}
                     onChangeMultiple={setUploads}
                   />
+                  {quickUploadNotice && (
+                    <p className="mt-1 text-[11px] text-teal-600 dark:text-teal-400">
+                      {quickUploadNotice}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -547,7 +636,7 @@ export function EntityModal({
           )}
 
           {entity === 'materials' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                   CAS Number
@@ -570,6 +659,21 @@ export function EntityModal({
                   onChange={(e) => setFema(e.target.value)}
                   placeholder="e.g. 3107"
                   className="w-full px-3 py-2 text-sm font-mono rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Max Usage %
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  placeholder="Optional"
+                  value={maxPercent}
+                  onChange={(e) => setMaxPercent(e.target.value)}
+                  className="w-full px-3 py-2 text-sm font-mono tabular-nums rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
                 />
               </div>
             </div>
@@ -661,9 +765,26 @@ export function EntityModal({
 
           {(entity === 'materials' || entity === 'suppliers' || entity === 'formulas') && (
             <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Attached Uploads (Documents / Media)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Attached Uploads (Documents / Media)
+                </label>
+                <label className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-600 dark:text-teal-400 hover:underline cursor-pointer">
+                  <UploadCloud className="w-3 h-3" />
+                  <span>{quickUploading ? 'Uploading...' : 'Quick Upload'}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf,.md,.markdown,.txt"
+                    disabled={quickUploading}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      e.target.value = '';
+                      handleQuickUpload(f);
+                    }}
+                  />
+                </label>
+              </div>
               <AsyncCombobox
                 endpoint="/api/uploads/lookup"
                 placeholder="Search & attach uploads..."
@@ -671,6 +792,11 @@ export function EntityModal({
                 values={uploads}
                 onChangeMultiple={setUploads}
               />
+              {quickUploadNotice && (
+                <p className="mt-1 text-[11px] text-teal-600 dark:text-teal-400">
+                  {quickUploadNotice}
+                </p>
+              )}
             </div>
           )}
 

@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, FolderTree, List, Plus, Search } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  CheckCircle2,
+  Clock,
+  FolderTree,
+  List,
+  Plus,
+  Search,
+  Sparkles,
+} from 'lucide-react';
 import { AsyncCombobox, type ComboboxOption } from '../components/AsyncCombobox';
 import { CategoryTree } from '../components/CategoryTree';
 import { EntityLink } from '../components/EntityLink';
@@ -55,6 +66,9 @@ export function ListView({ entity, refreshKey, onNavigate, onCreate }: ListViewP
   const [data, setData] = useState<PaginatedResponse<any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [ingestingPending, setIngestingPending] = useState(false);
+  const [ingestBanner, setIngestBanner] = useState<string | null>(null);
+  const [localRefresh, setLocalRefresh] = useState(0);
 
   // Reset filters/page on entity switch
   useEffect(() => {
@@ -63,6 +77,7 @@ export function ListView({ entity, refreshKey, onNavigate, onCreate }: ListViewP
     setDebouncedQ('');
     setCategoryFilter(null);
     setTagFilter(null);
+    setIngestBanner(null);
     setSortBy(entity === 'uploads' ? 'created_at' : 'name');
     setSortDir(entity === 'uploads' ? 'desc' : 'asc');
   }, [entity]);
@@ -116,8 +131,28 @@ export function ListView({ entity, refreshKey, onNavigate, onCreate }: ListViewP
     sortBy,
     sortDir,
     refreshKey,
+    localRefresh,
     categoryViewMode,
   ]);
+
+  const handleIngestPending = async () => {
+    setIngestingPending(true);
+    setIngestBanner(null);
+    try {
+      const res = await apiFetch<{ processed: number; catalog: { indexed: number } }>(
+        '/api/rag/ingest-pending',
+        { method: 'POST' }
+      );
+      setIngestBanner(
+        `Processed ${res.processed} pending upload(s) and indexed ${res.catalog?.indexed ?? 0} catalog record(s).`
+      );
+      setLocalRefresh((k) => k + 1);
+    } catch (err) {
+      setIngestBanner(err instanceof Error ? err.message : 'Ingestion failed');
+    } finally {
+      setIngestingPending(false);
+    }
+  };
 
   const toggleSort = (col: string) => {
     if (sortBy === col) {
@@ -179,6 +214,18 @@ export function ListView({ entity, refreshKey, onNavigate, onCreate }: ListViewP
             </div>
           )}
 
+          {entity === 'uploads' && (
+            <button
+              type="button"
+              disabled={ingestingPending}
+              onClick={handleIngestPending}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-50 whitespace-nowrap shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+              <span>{ingestingPending ? 'Ingesting...' : 'Ingest Pending'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onCreate()}
@@ -189,6 +236,12 @@ export function ListView({ entity, refreshKey, onNavigate, onCreate }: ListViewP
           </button>
         </div>
       </div>
+
+      {ingestBanner && (
+        <div className="p-3 rounded-md border border-teal-300 dark:border-teal-800 bg-teal-50/70 dark:bg-teal-950/40 text-xs text-teal-800 dark:text-teal-300">
+          {ingestBanner}
+        </div>
+      )}
 
       {!(entity === 'categories' && categoryViewMode === 'tree') && (
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -394,7 +447,7 @@ export function ListView({ entity, refreshKey, onNavigate, onCreate }: ListViewP
                               Size {renderSortIcon('size')}
                             </button>
                           </th>
-                          <th className="py-2.5 pr-4 font-medium">Ingested</th>
+                          <th className="py-2.5 pr-4 font-medium">RAG Status</th>
                         </>
                       )}
 
@@ -552,8 +605,23 @@ export function ListView({ entity, refreshKey, onNavigate, onCreate }: ListViewP
                             <td className="py-2.5 pr-4 font-mono tabular-nums text-xs text-right text-slate-600 dark:text-slate-400">
                               {formatBytes(row.size)}
                             </td>
-                            <td className="py-2.5 pr-4 text-xs text-slate-600 dark:text-slate-400">
-                              {row.ingested ? 'Yes' : 'No'}
+                            <td className="py-2.5 pr-4 text-xs">
+                              {row.ingestion_status === 'indexed' || row.ingested ? (
+                                <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Indexed</span>
+                                </span>
+                              ) : row.ingestion_status === 'error' ? (
+                                <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-400">
+                                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Error</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Pending</span>
+                                </span>
+                              )}
                             </td>
                           </>
                         )}

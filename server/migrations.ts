@@ -475,4 +475,176 @@ export async function initDatabase(): Promise<void> {
       t.primary(['formula', 'ingredient']);
     });
   }
+
+  // 20. Column upgrades for regulatory max_percent & upload ingestion status
+  if (!(await db.schema.hasColumn('materials', 'max_percent'))) {
+    await db.schema.alterTable('materials', (t) => {
+      t.decimal('max_percent', 6, 2).nullable().defaultTo(null);
+    });
+  }
+  if (!(await db.schema.hasColumn('ingredients', 'max_percent'))) {
+    await db.schema.alterTable('ingredients', (t) => {
+      t.decimal('max_percent', 6, 2).nullable().defaultTo(null);
+    });
+  }
+  if (!(await db.schema.hasColumn('uploads', 'ingestion_status'))) {
+    await db.schema.alterTable('uploads', (t) => {
+      t.string('ingestion_status').notNullable().defaultTo('pending');
+      t.text('ingestion_error').nullable().defaultTo(null);
+    });
+  }
+
+  // 21. Cost history tables
+  if (!(await db.schema.hasTable('formula_cost_snapshots'))) {
+    await db.schema.createTable('formula_cost_snapshots', (t) => {
+      t.increments('id').primary();
+      t.integer('formula')
+        .notNullable()
+        .references('id')
+        .inTable('formulas')
+        .onUpdate('CASCADE')
+        .onDelete('CASCADE')
+        .index();
+      t.decimal('calculated_usd_cost', 14, 4).notNullable().defaultTo(0);
+      t.string('reason').notNullable().defaultTo('recalculation');
+      t.timestamp('created_at').notNullable().defaultTo(db.fn.now());
+    });
+  }
+
+  if (!(await db.schema.hasTable('ingredient_cost_history'))) {
+    await db.schema.createTable('ingredient_cost_history', (t) => {
+      t.increments('id').primary();
+      t.integer('ingredient')
+        .notNullable()
+        .references('id')
+        .inTable('ingredients')
+        .onUpdate('CASCADE')
+        .onDelete('CASCADE')
+        .index();
+      t.decimal('cost', 12, 4).notNullable().defaultTo(0);
+      t.integer('currency')
+        .notNullable()
+        .references('id')
+        .inTable('currencies')
+        .onUpdate('CASCADE')
+        .onDelete('RESTRICT');
+      t.decimal('in_usd', 12, 6).notNullable().defaultTo(1);
+      t.timestamp('created_at').notNullable().defaultTo(db.fn.now());
+    });
+  }
+
+  // 22. LLM Settings (separate Chat & Embedding providers)
+  if (!(await db.schema.hasTable('llm_settings'))) {
+    await db.schema.createTable('llm_settings', (t) => {
+      t.string('role').primary(); // 'chat' | 'embedding'
+      t.string('provider_preset').notNullable().defaultTo('lmstudio');
+      t.string('base_url').notNullable().defaultTo('http://127.0.0.1:1234/v1');
+      t.text('api_key_encrypted').nullable().defaultTo(null);
+      t.string('model').notNullable().defaultTo('');
+      t.integer('dimensions').nullable().defaultTo(null);
+      t.decimal('temperature', 4, 2).notNullable().defaultTo(0.2);
+      t.integer('max_tokens').notNullable().defaultTo(2048);
+      t.integer('top_k_rag').notNullable().defaultTo(8);
+      t.timestamp('updated_at').notNullable().defaultTo(db.fn.now());
+    });
+  }
+
+  await db('llm_settings')
+    .insert([
+      {
+        role: 'chat',
+        provider_preset: 'lmstudio',
+        base_url: 'http://127.0.0.1:1234/v1',
+        model: '',
+        dimensions: null,
+        temperature: 0.2,
+        max_tokens: 2048,
+        top_k_rag: 8,
+      },
+      {
+        role: 'embedding',
+        provider_preset: 'llamacpp',
+        base_url: 'http://127.0.0.1:8080/v1',
+        model: '',
+        dimensions: 768,
+        temperature: 0,
+        max_tokens: 512,
+        top_k_rag: 8,
+      },
+    ])
+    .onConflict('role')
+    .ignore();
+
+  // 23. RAG Index Metadata & Hybrid Chunks (SQLite FTS5 + Float32 Vector BLOBs)
+  if (!(await db.schema.hasTable('rag_index_meta'))) {
+    await db.raw(`
+      CREATE TABLE rag_index_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        provider_preset TEXT DEFAULT NULL,
+        base_url TEXT DEFAULT NULL,
+        model TEXT DEFAULT NULL,
+        dimensions INTEGER DEFAULT NULL,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  if (!(await db.schema.hasTable('rag_chunks'))) {
+    await db.schema.createTable('rag_chunks', (t) => {
+      t.increments('id').primary();
+      t.string('source_type').notNullable(); // 'upload' | 'material' | 'ingredient' | 'formula' | 'supplier'
+      t.integer('source_id').notNullable();
+      t.integer('chunk_index').notNullable().defaultTo(0);
+      t.string('title').notNullable();
+      t.text('metadata_text').notNullable().defaultTo('');
+      t.integer('page_number').nullable().defaultTo(null);
+      t.string('section_title').nullable().defaultTo(null);
+      t.text('content').notNullable();
+      t.integer('token_count').notNullable().defaultTo(0);
+      t.integer('dimensions').nullable().defaultTo(null);
+      t.binary('embedding').nullable().defaultTo(null);
+      t.timestamp('created_at').notNullable().defaultTo(db.fn.now());
+      t.index(['source_type', 'source_id']);
+    });
+  }
+
+  await db.raw(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(
+      chunk_id UNINDEXED,
+      title,
+      metadata_text,
+      content,
+      tokenize='porter unicode61'
+    )
+  `);
+
+  // 24. Agentic Chat Sessions & Messages
+  if (!(await db.schema.hasTable('chat_sessions'))) {
+    await db.schema.createTable('chat_sessions', (t) => {
+      t.increments('id').primary();
+      t.string('title').notNullable().defaultTo('New Formulation Chat');
+      t.string('scope_entity').nullable().defaultTo(null);
+      t.integer('scope_id').nullable().defaultTo(null);
+      t.timestamp('created_at').notNullable().defaultTo(db.fn.now());
+      t.timestamp('updated_at').notNullable().defaultTo(db.fn.now());
+    });
+  }
+
+  if (!(await db.schema.hasTable('chat_messages'))) {
+    await db.schema.createTable('chat_messages', (t) => {
+      t.increments('id').primary();
+      t.integer('session_id')
+        .notNullable()
+        .references('id')
+        .inTable('chat_sessions')
+        .onUpdate('CASCADE')
+        .onDelete('CASCADE')
+        .index();
+      t.string('role').notNullable(); // 'user' | 'assistant'
+      t.text('content').notNullable();
+      t.text('tool_calls_json').nullable().defaultTo(null);
+      t.text('citations_json').nullable().defaultTo(null);
+      t.timestamp('created_at').notNullable().defaultTo(db.fn.now());
+    });
+  }
 }

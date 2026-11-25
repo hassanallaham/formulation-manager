@@ -6,6 +6,10 @@ export function setAuthToken(token: string | null): void {
   inMemoryAuthToken = token;
 }
 
+export function getAuthToken(): string | null {
+  return inMemoryAuthToken;
+}
+
 export class ApiError extends Error {
   status: number;
   duplicate?: boolean;

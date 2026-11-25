@@ -189,6 +189,13 @@ ingredientsRouter.get('/:id/relations/:rel', async (req, res) => {
         .select('u.*', 'c.name as category_name')
         .orderBy('u.created_at', 'desc');
       countQuery = db('ingredients_uploads').where('ingredient', id).count<{ count: number }[]>('upload as count').first();
+    } else if (rel === 'cost_history') {
+      query = db('ingredient_cost_history as h')
+        .leftJoin('currencies as cur', 'h.currency', 'cur.id')
+        .where('h.ingredient', id)
+        .select('h.*', 'cur.name as currency_name')
+        .orderBy('h.created_at', 'desc');
+      countQuery = db('ingredient_cost_history').where('ingredient', id).count<{ count: number }[]>('id as count').first();
     } else {
       res.status(400).json({ error: 'Unknown relation' });
       return;
@@ -218,6 +225,7 @@ ingredientsRouter.post('/', async (req, res) => {
     const uploadIds = parseIdArray(req.body?.uploads);
 
     const id = await db.transaction(async (trx) => {
+      const currencyId = req.body?.currency ? Number(req.body.currency) : 1;
       const [newId] = await trx('ingredients').insert({
         name,
         category: req.body?.category ? Number(req.body.category) : 1,
@@ -227,7 +235,19 @@ ingredientsRouter.post('/', async (req, res) => {
         info: req.body?.info ? String(req.body.info) : null,
         cost,
         unit: req.body?.unit ? Number(req.body.unit) : 1,
-        currency: req.body?.currency ? Number(req.body.currency) : 1,
+        currency: currencyId,
+        max_percent:
+          req.body?.max_percent !== undefined && req.body?.max_percent !== null && req.body?.max_percent !== ''
+            ? Number(req.body.max_percent)
+            : null,
+      });
+
+      const cur = await trx('currencies').where('id', currencyId).first();
+      await trx('ingredient_cost_history').insert({
+        ingredient: newId,
+        cost,
+        currency: currencyId,
+        in_usd: cur?.in_usd ?? 1,
       });
 
       if (tagIds.length > 0) {
@@ -265,6 +285,12 @@ ingredientsRouter.put('/:id', async (req, res) => {
       if (req.body?.photo !== undefined) updates.photo = req.body.photo ? Number(req.body.photo) : null;
       if (req.body?.info !== undefined) updates.info = req.body.info ? String(req.body.info) : null;
       if (req.body?.unit !== undefined) updates.unit = Number(req.body.unit) || 1;
+      if (req.body?.max_percent !== undefined) {
+        updates.max_percent =
+          req.body.max_percent !== null && req.body.max_percent !== ''
+            ? Number(req.body.max_percent)
+            : null;
+      }
 
       if (req.body?.cost !== undefined) {
         const nextCost = new Decimal(req.body.cost).toDecimalPlaces(4).toNumber();
@@ -280,6 +306,18 @@ ingredientsRouter.put('/:id', async (req, res) => {
       }
 
       await trx('ingredients').where('id', id).update(updates);
+
+      if (costOrCurrencyChanged) {
+        const finalCurrencyId = Number(updates.currency ?? existing.currency);
+        const finalCost = Number(updates.cost ?? existing.cost);
+        const cur = await trx('currencies').where('id', finalCurrencyId).first();
+        await trx('ingredient_cost_history').insert({
+          ingredient: id,
+          cost: finalCost,
+          currency: finalCurrencyId,
+          in_usd: cur?.in_usd ?? 1,
+        });
+      }
 
       if (Array.isArray(req.body?.tags)) {
         await trx('ingredients_tags').where('ingredient', id).del();

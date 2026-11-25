@@ -11,6 +11,7 @@ import { ingredientsRouter } from './server/routes/ingredients.js';
 import { systemRouter } from './server/routes/system.js';
 import { categoriesRouter, tagsRouter } from './server/routes/taxonomy.js';
 import { uploadsRouter } from './server/routes/uploads.js';
+import { chatRouter, globalSearchRouter, llmRouter, ragRouter } from './server/routes/rag.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +36,10 @@ async function startServer(): Promise<void> {
   app.use('/api/ingredients', ingredientsRouter);
   app.use('/api/formulas', formulasRouter);
   app.use('/api/system', systemRouter);
+  app.use('/api/llm', llmRouter);
+  app.use('/api/rag', ragRouter);
+  app.use('/api/chat', chatRouter);
+  app.use('/api/search/global', globalSearchRouter);
 
   // Multer & API error handler
   app.use('/api', (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -17,6 +17,7 @@ formulasRouter.use(requireAuth);
 async function getFormulaIngredientsWithMetrics(formulaId: number) {
   const rows = await db('formulas_ingredients as fi')
     .join('ingredients as i', 'fi.ingredient', 'i.id')
+    .leftJoin('materials as m', 'i.material', 'm.id')
     .leftJoin('units as un', 'i.unit', 'un.id')
     .leftJoin('currencies as cur', 'i.currency', 'cur.id')
     .leftJoin('suppliers as s', 'i.supplier', 's.id')
@@ -27,6 +28,8 @@ async function getFormulaIngredientsWithMetrics(formulaId: number) {
       'fi.quantity',
       'i.name as ingredient_name',
       'i.cost',
+      'i.max_percent as ingredient_max_percent',
+      'm.max_percent as material_max_percent',
       'i.unit',
       'un.name as unit_name',
       'un.equal_in_kg',
@@ -53,11 +56,18 @@ async function getFormulaIngredientsWithMetrics(formulaId: number) {
     totalWeightKg = totalWeightKg.plus(weightKg);
     totalUsdCost = totalUsdCost.plus(lineUsdCost);
 
+    const limits = [r.ingredient_max_percent, r.material_max_percent]
+      .filter((v) => v !== null && v !== undefined)
+      .map(Number);
+    const effectiveMaxPercent = limits.length > 0 ? Math.min(...limits) : null;
+
     return {
       ...r,
       weight_kg: weightKg.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber(),
       line_usd_cost: lineUsdCost.toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toNumber(),
       weight_percent: 0,
+      effective_max_percent: effectiveMaxPercent,
+      exceeds_limit: false,
     };
   });
 
@@ -68,6 +78,9 @@ async function getFormulaIngredientsWithMetrics(formulaId: number) {
         .times(100)
         .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
         .toNumber();
+      if (item.effective_max_percent !== null && item.weight_percent > item.effective_max_percent) {
+        item.exceeds_limit = true;
+      }
     }
   }
 
@@ -271,6 +284,12 @@ formulasRouter.get('/:id/relations/:rel', async (req, res) => {
         .select('u.*', 'c.name as category_name')
         .orderBy('u.created_at', 'desc');
       countQuery = db('formulas_uploads').where('formula', id).count<{ count: number }[]>('upload as count').first();
+    } else if (rel === 'cost_history') {
+      query = db('formula_cost_snapshots')
+        .where('formula', id)
+        .select('*')
+        .orderBy('created_at', 'desc');
+      countQuery = db('formula_cost_snapshots').where('formula', id).count<{ count: number }[]>('id as count').first();
     } else {
       res.status(400).json({ error: 'Unknown relation' });
       return;

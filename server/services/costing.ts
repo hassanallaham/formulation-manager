@@ -3,8 +3,14 @@ import type { Knex } from 'knex';
 
 export async function recalculateFormulaCost(
   trx: Knex.Transaction | Knex,
-  formulaId: number
+  formulaId: number,
+  reason = 'ingredient_update'
 ): Promise<string> {
+  const existingFormula = await trx('formulas')
+    .where('id', formulaId)
+    .select('calculated_usd_cost')
+    .first();
+
   const rows = await trx('formulas_ingredients as fi')
     .join('ingredients as i', 'fi.ingredient', 'i.id')
     .join('currencies as c', 'i.currency', 'c.id')
@@ -28,6 +34,14 @@ export async function recalculateFormulaCost(
       updated_at: trx.fn.now(),
     });
 
+  if (existingFormula && Number(existingFormula.calculated_usd_cost) !== rounded) {
+    await trx('formula_cost_snapshots').insert({
+      formula: formulaId,
+      calculated_usd_cost: rounded,
+      reason,
+    });
+  }
+
   return total.toFixed(4);
 }
 
@@ -41,7 +55,7 @@ export async function recalculateFormulasForIngredient(
     .select('formula');
 
   for (const row of rows) {
-    await recalculateFormulaCost(trx, row.formula);
+    await recalculateFormulaCost(trx, row.formula, 'ingredient_price_change');
   }
 }
 
@@ -56,6 +70,6 @@ export async function recalculateFormulasForCurrency(
     .select('fi.formula');
 
   for (const row of rows) {
-    await recalculateFormulaCost(trx, row.formula);
+    await recalculateFormulaCost(trx, row.formula, 'currency_rate_change');
   }
 }

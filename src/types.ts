@@ -9,6 +9,8 @@ export type EntityType =
   | 'units'
   | 'currencies';
 
+export type AppView = EntityType | 'ai-chat' | 'llm-settings';
+
 export interface PaginationMeta {
   page: number;
   pageSize: number;
@@ -62,6 +64,8 @@ export interface UploadRecord {
   mimetype: string;
   notes: string | null;
   ingested: number | boolean;
+  ingestion_status?: string;
+  ingestion_error?: string | null;
   category: number;
   category_name?: string | null;
   tags?: NamedRef[];
@@ -75,6 +79,7 @@ export interface Material {
   CAS: string | null;
   FEMA: string | null;
   info: string | null;
+  max_percent?: number | null;
   category: number;
   category_name?: string | null;
   photo: number | null;
@@ -125,6 +130,7 @@ export interface Ingredient {
   photo_thumbnail?: string | null;
   info: string | null;
   cost: number;
+  max_percent?: number | null;
   unit: number;
   unit_name?: string | null;
   equal_in_kg?: number;
@@ -154,6 +160,8 @@ export interface FormulaIngredientRow {
   weight_kg: number;
   line_usd_cost: number;
   weight_percent: number;
+  effective_max_percent?: number | null;
+  exceeds_limit?: boolean;
 }
 
 export interface FormulaTotals {
@@ -179,6 +187,6 @@ export interface Formula {
 }
 
 export interface RouteTarget {
-  entity: EntityType;
+  entity: AppView;
   id?: number;
 }

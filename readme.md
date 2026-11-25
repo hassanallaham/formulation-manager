@@ -40,6 +40,15 @@ Built with **Node.js**, **Express**, **Knex.js**, **SQLite (`better-sqlite3`)**,
   * Searchable typeahead dropdowns (`AsyncCombobox`) for all relation fields—no numeric IDs to memorize.
   * **Dark** (default) and **Light** theme toggle persisted across sessions.
   * One-click SQLite `VACUUM INTO` database backup download.
+  * **Global Command Palette (`Ctrl+K` / `Cmd+K`):** Instant cross-entity search across formulas, ingredients, materials (by name, CAS, or FEMA), suppliers, uploads, categories, and tags.
+  * **Inline Quick-Upload:** Upload and attach documents directly inside Formula, Ingredient, Material, and Supplier modals with automatic SHA-256 deduplication.
+* **Regulatory Limits & Cost History:**
+  * Optional `max_percent` regulatory usage ceilings on Materials and Ingredients, with automatic over-limit warnings in Formula Ingredient tables.
+  * Automatic `formula_cost_snapshots` and `ingredient_cost_history` logging displayed in lazy-loaded **Cost History** detail tabs.
+* **Agentic Hybrid RAG & Dual LLM Providers:**
+  * Configure separate **Chat LLM** and **Embedding LLM** providers in **LLM & RAG Settings** with presets for **LM Studio**, **llama.cpp**, **Ollama**, **OpenAI**, and custom OpenAI-compatible endpoints, plus configurable embedding **`dimensions`** (Matryoshka/truncation + L2 normalization), model discovery, connection testing, and dimension-mismatch warnings.
+  * SQLite-native **Hybrid Search** combining **FTS5 BM25** full-text search + **`Float32Array` vector cosine similarity** via **Reciprocal Rank Fusion (RRF)** across extracted PDF (`pdfjs-dist`), Markdown, TXT, and catalog records.
+  * Streaming **AI Assistant** with read-only deterministic tools (`hybrid_search_documents`, `search_catalog`, `get_formula_details`, `get_attached_documents`, `calculate_scaled_batch`), JSON ReAct fallback for local models, clickable `[[entity:id|Label]]` citations, and **"Ask Agent"** deep-link scoping from any record.
 
 ---
 
@@ -47,14 +56,19 @@ Built with **Node.js**, **Express**, **Knex.js**, **SQLite (`better-sqlite3`)**,
 
 ```text
 ├── srs.md                        # Finalized Software Requirements Specification
+├── improvements.md               # Architecture & Agentic Hybrid RAG enhancement plan
 ├── readme.md                     # Documentation & build instructions
 ├── server.ts                     # Express server + Vite dev / static production host
 ├── server/
 │   ├── config.ts                 # Data directory paths & confined file path helpers
 │   ├── db.ts                     # Knex + better-sqlite3 pool (PRAGMA foreign_keys = ON, WAL)
-│   ├── migrations.ts             # Idempotent schema, indexes, triggers & seeds
+│   ├── migrations.ts             # Idempotent schema, FTS5, triggers & seeds
 │   ├── middleware/auth.ts        # scrypt password hashing & HMAC session tokens
-│   ├── services/costing.ts       # Transactional decimal.js USD cost recalculation
+│   ├── services/
+│   │   ├── costing.ts            # Transactional decimal.js USD cost & snapshot logging
+│   │   ├── llmClient.ts          # OpenAI-compatible Chat & Embedding client + AES-256-GCM key storage
+│   │   ├── rag.ts                # PDF/Markdown/TXT chunker, vector + FTS5 hybrid search (RRF)
+│   │   └── agent.ts              # Streaming tool-calling & ReAct fallback formulation agent
 │   ├── utils/
 │   │   ├── errors.ts             # SQLite constraint & trigger error mapping
 │   │   └── queryHelpers.ts       # Pagination & recursive category subtree queries
@@ -63,25 +77,29 @@ Built with **Node.js**, **Express**, **Knex.js**, **SQLite (`better-sqlite3`)**,
 │       ├── taxonomy.ts           # Categories (tree + CRUD) & Tags
 │       ├── uploads.ts            # Streaming SHA-256 dedupe, Sharp thumbnails, file serving
 │       ├── catalog.ts            # Materials, Suppliers, Currencies, Units
-│       ├── ingredients.ts        # Ingredients CRUD & cost cascade
+│       ├── ingredients.ts        # Ingredients CRUD, cost history & cost cascade
 │       ├── formulas.ts           # Formulas CRUD, all-row ingredients, clone, CSV/MD export
+│       ├── rag.ts                # LLM settings, RAG ingestion, hybrid search, chat & global search
 │       └── system.ts             # Health check, stats, and SQLite backup
 ├── src/
-│   ├── App.tsx                   # App shell, navigation sidebar, theme toggle, routing
+│   ├── App.tsx                   # App shell, navigation sidebar, Ctrl+K palette, theme toggle
 │   ├── types.ts                  # TypeScript entity interfaces
 │   ├── lib/api.ts                # Fetch client with Bearer/cookie auth & error parsing
 │   ├── components/
 │   │   ├── AsyncCombobox.tsx     # Typeahead relation picker
 │   │   ├── AuthGate.tsx          # First-run setup, login & change-password modal
 │   │   ├── CategoryTree.tsx      # Collapsible category hierarchy view
-│   │   ├── DetailTabs.tsx        # Lazy-loaded paginated tabs for detail views
+│   │   ├── CommandPalette.tsx    # Global Ctrl+K cross-entity search modal
+│   │   ├── DetailTabs.tsx        # Lazy-loaded paginated tabs (incl. Cost History)
 │   │   ├── EntityLink.tsx        # Clickable relation link
-│   │   ├── EntityModal.tsx       # Create/Edit modal for all 9 entities
+│   │   ├── EntityModal.tsx       # Create/Edit modal + Inline Quick-Upload
 │   │   ├── PaginationBar.tsx     # Page size 10 pagination controls
 │   │   └── UploadPreview.tsx     # WebP thumbnail / file-type icon renderer
 │   └── views/
-│       ├── ListView.tsx          # Paginated list view with search & filters
-│       └── DetailView.tsx        # Single-record detail view + Formula Ingredients table
+│       ├── ListView.tsx          # Paginated list view with search, filters & RAG ingest trigger
+│       ├── DetailView.tsx        # Single-record detail view, regulatory warnings & Ask Agent
+│       ├── AgentChatView.tsx     # Streaming AI Assistant with tool traces & clickable citations
+│       └── LlmSettingsView.tsx   # Dual Chat/Embedding LLM config, dimensions & RAG indexing
 └── src-tauri/                    # Tauri v2 Linux desktop shell (.deb target)
     ├── Cargo.toml
     ├── build.rs
