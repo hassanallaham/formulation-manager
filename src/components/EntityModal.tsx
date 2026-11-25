@@ -217,7 +217,11 @@ export function EntityModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-      <div className="w-full max-w-xl rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 my-8">
+      <div
+        className={`w-full ${
+          entity === 'ingredients' ? 'max-w-4xl' : 'max-w-xl'
+        } rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 my-8`}
+      >
         <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             {isEdit ? `Edit ${singularLabel[entity]}` : `New ${singularLabel[entity]}`}
@@ -262,7 +266,158 @@ export function EntityModal({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {entity === 'uploads' && !isEdit ? (
+          {entity === 'ingredients' ? (
+            <div className="space-y-3.5">
+              {/* Row 1: Name + Category */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Category
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/categories/lookup"
+                    placeholder="Search categories..."
+                    value={category}
+                    onChangeSingle={(v) => setCategory(v || { id: 1, name: 'uncategorized' })}
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Material + Supplier */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Material
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/materials/lookup"
+                    placeholder="Search materials..."
+                    nullable
+                    value={material}
+                    onChangeSingle={setMaterial}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Supplier
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/suppliers/lookup"
+                    placeholder="Search suppliers..."
+                    nullable
+                    value={supplier}
+                    onChangeSingle={setSupplier}
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Cost + Unit + Currency + Photo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Cost (per Unit)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    value={cost}
+                    onChange={(e) => setCost(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono tabular-nums rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Unit
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/units/lookup"
+                    placeholder="Select unit..."
+                    value={unit}
+                    onChangeSingle={(v) => setUnit(v || { id: 1, name: 'kg' })}
+                    formatOption={(o) => `${o.name} (${o.equal_in_kg} kg)`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Currency
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/currencies/lookup"
+                    placeholder="Select currency..."
+                    value={currency}
+                    onChangeSingle={(v) => setCurrency(v || { id: 1, name: 'USD' })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Photo
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/uploads/lookup"
+                    placeholder="Search images..."
+                    nullable
+                    extraParams={{ imagesOnly: true }}
+                    value={photo}
+                    onChangeSingle={setPhoto}
+                  />
+                </div>
+              </div>
+
+              {/* Row 4: Tags + Attached Uploads */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Tags
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/tags/lookup"
+                    placeholder="Search & add tags..."
+                    multiple
+                    values={tags}
+                    onChangeMultiple={setTags}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Attached Uploads
+                  </label>
+                  <AsyncCombobox
+                    endpoint="/api/uploads/lookup"
+                    placeholder="Search & attach uploads..."
+                    multiple
+                    values={uploads}
+                    onChangeMultiple={setUploads}
+                  />
+                </div>
+              </div>
+
+              {/* Row 5: Info */}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Info / Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={info}
+                  onChange={(e) => setInfo(e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                />
+              </div>
+            </div>
+          ) : entity === 'uploads' && !isEdit ? (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                 Select File (Image, PDF, Markdown, TXT)
@@ -377,7 +532,7 @@ export function EntityModal({
             </div>
           )}
 
-          {(entity === 'uploads' || entity === 'materials' || entity === 'ingredients' || entity === 'formulas') && (
+          {(entity === 'uploads' || entity === 'materials' || entity === 'formulas') && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Category
@@ -420,77 +575,7 @@ export function EntityModal({
             </div>
           )}
 
-          {entity === 'ingredients' && (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Material
-                  </label>
-                  <AsyncCombobox
-                    endpoint="/api/materials/lookup"
-                    placeholder="Search materials..."
-                    nullable
-                    value={material}
-                    onChangeSingle={setMaterial}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Supplier
-                  </label>
-                  <AsyncCombobox
-                    endpoint="/api/suppliers/lookup"
-                    placeholder="Search suppliers..."
-                    nullable
-                    value={supplier}
-                    onChangeSingle={setSupplier}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Cost (per Unit)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    value={cost}
-                    onChange={(e) => setCost(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono tabular-nums rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Unit
-                  </label>
-                  <AsyncCombobox
-                    endpoint="/api/units/lookup"
-                    placeholder="Select unit..."
-                    value={unit}
-                    onChangeSingle={(v) => setUnit(v || { id: 1, name: 'kg' })}
-                    formatOption={(o) => `${o.name} (${o.equal_in_kg} kg)`}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Currency
-                  </label>
-                  <AsyncCombobox
-                    endpoint="/api/currencies/lookup"
-                    placeholder="Select currency..."
-                    value={currency}
-                    onChangeSingle={(v) => setCurrency(v || { id: 1, name: 'USD' })}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          {(entity === 'materials' || entity === 'ingredients') && (
+          {entity === 'materials' && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Photo (Image Upload)
@@ -506,7 +591,7 @@ export function EntityModal({
             </div>
           )}
 
-          {(entity === 'materials' || entity === 'suppliers' || entity === 'ingredients' || entity === 'formulas') && (
+          {(entity === 'materials' || entity === 'suppliers' || entity === 'formulas') && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Info / Notes
@@ -559,7 +644,7 @@ export function EntityModal({
             </>
           )}
 
-          {(entity === 'uploads' || entity === 'materials' || entity === 'ingredients' || entity === 'formulas') && (
+          {(entity === 'uploads' || entity === 'materials' || entity === 'formulas') && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Tags
@@ -574,7 +659,7 @@ export function EntityModal({
             </div>
           )}
 
-          {(entity === 'materials' || entity === 'suppliers' || entity === 'ingredients' || entity === 'formulas') && (
+          {(entity === 'materials' || entity === 'suppliers' || entity === 'formulas') && (
             <div>
               <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Attached Uploads (Documents / Media)
