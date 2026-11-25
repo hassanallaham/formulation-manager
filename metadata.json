@@ -1,0 +1,6 @@
+{
+  "name": "FormuLab — Formulation & Ingredient Manager",
+  "description": "Lightweight desktop formulation, ingredient, material, supplier, and upload manager powered by Node.js, Knex, and SQLite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

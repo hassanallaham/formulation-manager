@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FormuLab",
+  "version": "1.0.0",
+  "identifier": "app.formulab.desktop",
+  "build": {
+    "beforeBuildCommand": "npm run build && npm run build:server",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "FormuLab — Formulation & Ingredient Manager",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "resources": {
+      "../dist-server/server.mjs": "server/server.mjs",
+      "../dist": "server/dist",
+      "../node_modules": "server/node_modules",
+      "../package.json": "server/package.json"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["nodejs (>= 24.0.0)"]
+      }
+    }
+  }
+}
